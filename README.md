@@ -101,6 +101,7 @@ This prototype was created to understand:
 ## Contributors
 
 -   Luis Ellerena - lellerena@uninorte.edu.co
+-   Camilo Heras - caheras@uninorte.edu.co
 
 ## License
 
