@@ -12,7 +12,7 @@ export function encryptFile(
     filePath: string,
     outputPath: string,
     key: Buffer
-): { iv: Buffer } {
+): Promise<{ iv: Buffer }> {
     // Generate a random IV
     const iv = crypto.randomBytes(16)
 
