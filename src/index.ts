@@ -20,6 +20,13 @@ let encryptionResults: {
     encryptedAESKey: Buffer
     attackerPrivateKey: string
     encryptedFiles: string[]
+    encryptionStats: {
+        totalFiles: number
+        totalSize: number
+        encryptionTime: number
+        targetExtensions: string[]
+        timestamp: Date
+    }
 } | null = null
 
 // Main function to run the demo
@@ -82,6 +89,16 @@ async function runEncryption() {
             console.log(`Victim ID: ${encryptionResults.victimId}`)
             console.log(
                 `Files encrypted: ${encryptionResults.encryptedFiles.length}`
+            )
+            console.log(
+                `Total data encrypted: ${
+                    encryptionResults.encryptionStats.totalSize / (1024 * 1024)
+                } MB`
+            )
+            console.log(
+                `Time taken: ${encryptionResults.encryptionStats.encryptionTime.toFixed(
+                    2
+                )} seconds`
             )
             console.log(
                 '\nA ransom note has been created in the target directory.'
@@ -194,6 +211,16 @@ async function runFullLifecycle() {
             console.log(`Victim ID: ${encryptionResults.victimId}`)
             console.log(
                 `Files encrypted: ${encryptionResults.encryptedFiles.length}`
+            )
+            console.log(
+                `Total data encrypted: ${
+                    encryptionResults.encryptionStats.totalSize / (1024 * 1024)
+                } MB`
+            )
+            console.log(
+                `Time taken: ${encryptionResults.encryptionStats.encryptionTime.toFixed(
+                    2
+                )} seconds`
             )
             console.log(
                 '\nA ransom note has been created in the target directory.'

