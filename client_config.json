@@ -1,0 +1,7 @@
+{
+    "host": "127.0.0.1",
+    "port": 4444,
+    "clientInfoPath": "./client_connection.json",
+    "maxReconnectAttempts": 5,
+    "logLevel": "info"
+}

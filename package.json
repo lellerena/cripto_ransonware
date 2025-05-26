@@ -17,13 +17,19 @@
     "scripts": {
         "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
         "build": "tsc",
-        "start": "node dist/index.js"
+        "start": "node dist/index.js",
+        "server": "ts-node src/server.ts",
+        "client": "ts-node src/index.ts",
+        "test-encrypt": "ts-node src/index.ts encrypt",
+        "test-decrypt": "ts-node src/index.ts decrypt",
+        "test-workflow": "ts-node src/test-workflow.ts"
     },
     "dependencies": {
         "@stablelib/chacha": "^2.0.1",
         "@stablelib/random": "^2.0.1",
         "elliptic": "^6.6.1",
         "express": "^5.1.0",
+        "open": "^10.1.2",
         "socket.io": "^4.8.1",
         "socket.io-client": "^4.8.1",
         "tweetnacl": "^1.0.3",

