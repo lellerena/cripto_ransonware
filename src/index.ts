@@ -91,7 +91,7 @@ async function runEncryption() {
             )
 
             // Run the encryption process
-            encryptionResults = await encryptTargetFiles(targetDir, true) // Save encryption results to a file
+            encryptionResults = await encryptTargetFiles(targetDir, false) // Save encryption results to a file
             const resultsPath = saveEncryptionResults(
                 encryptionResults,
                 targetDir
