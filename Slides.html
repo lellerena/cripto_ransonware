@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Presentación Proyecto Ransomware Educativo</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+    body {
+      margin: 0;
+      font-family: 'Share Tech Mono', monospace;
+      background-color: #0f0f0f;
+      color: #00ff00;
+    }
+    .slides {
+      display: flex;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      height: 100vh;
+    }
+    .slide {
+      flex: none;
+      width: 100vw;
+      height: 100vh;
+      scroll-snap-align: start;
+      box-sizing: border-box;
+      padding: 40px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      background: #0f0f0f;
+      border-right: 2px dashed #00ff00;
+    }
+    h1, h2, h3 {
+      margin: 0 0 20px;
+      color: #00ff00;
+    }
+    ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+    li {
+      margin-bottom: 10px;
+    }
+    .title-slide {
+      align-items: center;
+      text-align: center;
+    }
+    .title-slide h1 {
+      font-size: 3em;
+    }
+    .title-slide p {
+      font-size: 1.2em;
+      margin-top: 10px;
+      color: #00cc00;
+    }
+  </style>
+</head>
+<body>
+  <div class="slides">
+    <section class="slide title-slide">
+      <h1>Diseño e Implementación de un Prototipo de Ransomware para Propósitos Educativos</h1>
+      <p>Camilo Andrés Heras, Jaymed Daniel Linero, Luis Eduardo Llerena 📚🔐</p>
+      <p>Marzo 2025</p>
+    </section>
+
+    <section class="slide">
+      <h2>1. Situación Problema 🛑</h2>
+      <ul>
+        <li>El ransomware cifra archivos y exige rescate.</li>
+        <li>Alto impacto en individuos y organizaciones.</li>
+        <li>Necesidad de formación práctica en entornos seguros.</li>
+        <li>Entornos de aprendizaje simulados reducen el riesgo de exposición.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>2. Justificación 📖</h2>
+      <ul>
+        <li>Aprendizaje práctico de técnicas criptográficas.</li>
+        <li>Simulación controlada para análisis de ataques reales.</li>
+        <li>Refuerzo de estrategias preventivas y correctivas.</li>
+        <li>Inspirado en casos reales como WannaCry, Ryuk y Maze.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>3. Objetivos 🎯</h2>
+      <h3>General:</h3>
+      <p>Desarrollar un prototipo funcional de ransomware educativo.</p>
+      <h3>Específicos:</h3>
+      <ul>
+        <li>Analizar técnicas criptográficas reales.</li>
+        <li>Diseñar la arquitectura de cifrado y gestión de claves.</li>
+        <li>Implementar AES-192 CBC y RSA-2048.</li>
+        <li>Simular nota de rescate y pago.</li>
+        <li>Implementar proceso de descifrado post-pago.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>4. Estado del Arte 🔍</h2>
+      <ul>
+        <li><strong>Evolución:</strong> De ataques masivos a doble extorsión.</li>
+        <li><strong>Técnicas:</strong> Híbrido AES + RSA, memory attacks.</li>
+        <li><strong>Prevención:</strong> Backups, segmentación, detección forense.</li>
+        <li>Inspiración: ataques conocidos como Petya, LockBit.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>5. Importancia de Comprender el Ransomware 🧠</h2>
+      <ul>
+        <li>Comprender su funcionamiento permite detectar vectores de entrada y evitar su propagación.</li>
+        <li>Permite desarrollar software defensivo y respuestas automatizadas ante infecciones.</li>
+        <li>Forma a profesionales con conciencia ética y habilidades técnicas reales.</li>
+        <li>Conocer los detalles técnicos ayuda a anticipar ataques y mitigar impactos.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>6. Consecuencias Reales de un Ataque 📉</h2>
+      <ul>
+        <li><strong>WannaCry (2017):</strong> Afectó a más de 200,000 equipos en 150 países. Hospitales en Reino Unido quedaron inoperativos.</li>
+        <li><strong>Ryuk:</strong> Dirigido a infraestructuras críticas. En EE.UU. paralizó ciudades enteras como Atlanta y Baltimore.</li>
+        <li><strong>Maze:</strong> Amenazaba con publicar datos robados si no se pagaba. Filtraciones masivas y daño reputacional.</li>
+        <li>El impacto va más allá de lo económico: paralización operativa, pérdida de confianza y daño institucional.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>7. Diseño y Desarrollo ⚙️</h2>
+      <h3>Proceso:</h3>
+      <ul>
+        <li>Análisis, diseño, implementación, pruebas y validación.</li>
+      </ul>
+      <h3>Arquitectura:</h3>
+      <ul>
+        <li>Cliente Ransomware (AES-192-CBC, IV único por archivo).</li>
+        <li>Servidor C2 (RSA-2048 OAEP, gestión de IVs cifrados).</li>
+        <li>Nota de rescate incluye ID de clave única por víctima.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>8. Resultados Obtenidos 📊</h2>
+      <ul>
+        <li>99 archivos cifrados (0.60 MB) en 0.20 s (2.97 MB/s).</li>
+        <li>Descifrado en 0.001 s por archivo.</li>
+        <li>100% de restauración sin pérdida de datos.</li>
+        <li>Validado con directorios simulados en entorno controlado.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h2>9. Conclusiones ✅</h2>
+      <ul>
+        <li>Prototipo cumple objetivos educativos y técnicos.</li>
+        <li>Entorno seguro y código modular en TypeScript.</li>
+        <li>Futuras mejoras: automatización de directorios y empaquetado.</li>
+        <li>Demuestra de forma ética cómo opera un ransomware real.</li>
+      </ul>
+    </section>
+
+    <section class="slide">
+      <h1 style="text-align:center">Prototipo</h1>
+    </section>
+  </div>
+</body>
+</html>
